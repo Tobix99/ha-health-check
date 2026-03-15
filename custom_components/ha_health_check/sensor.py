@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory, MATCH_ALL
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
@@ -30,7 +31,13 @@ class HAHealthCheckSensor(SensorEntity):
     _attr_has_entity_name = True
     _attr_name = "Last Seen"
     _attr_icon = "mdi:heart-pulse"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_should_poll = False
+    # Exclude all extra attributes from recorder to reduce DB overhead.
+    # Note: the entity state itself is still recorded; full exclusion
+    # requires the user to add a recorder exclude filter.
+    _unrecorded_attributes = frozenset({MATCH_ALL})
 
     def __init__(self, entry: ConfigEntry) -> None:
         """Initialize the sensor."""
@@ -49,5 +56,5 @@ class HAHealthCheckSensor(SensorEntity):
         """
         if self.hass is None:
             return
-        self._attr_native_value = int(dt_util.utcnow().timestamp())
+        self._attr_native_value = dt_util.utcnow().replace(microsecond=0)
         self.async_write_ha_state()
