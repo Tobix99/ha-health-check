@@ -120,6 +120,19 @@ livenessProbe:
 
 ## Troubleshooting
 
+### Excluding from the recorder
+
+The Last Seen sensor updates every keepalive interval (default: every 10 seconds), which can add up in the recorder database over time. If you want to stop the recorder from tracking it, add this to your `configuration.yaml`:
+
+```yaml
+recorder:
+  exclude:
+    entities:
+      - sensor.ha_health_check_last_seen
+```
+
+The `/healthz` endpoint will automatically fall back to reading from `hass.states` instead, so the health check keeps working as expected.
+
 ### Endpoint returns 503
 The endpoint returns 503 when the service is unavailable. This can mean the integration is not fully initialized (wait for Home Assistant to finish starting up) or the keepalive threshold has been exceeded.
 
