@@ -189,7 +189,7 @@ async def test_healthz_auth_required(hass: HomeAssistant, hass_client) -> None:
 
     # Set a valid timestamp so health check logic succeeds
     known_time = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    hass.states.async_set(ENTITY_ID, int(known_time.timestamp()))
+    hass.states.async_set(ENTITY_ID, known_time.isoformat())
     await hass.async_block_till_done()
 
     mock_now = datetime(2025, 1, 1, 0, 0, 10, tzinfo=timezone.utc)
@@ -223,7 +223,7 @@ async def test_healthz_no_auth_required(hass: HomeAssistant, hass_client) -> Non
 
     # Set a valid timestamp so health check logic succeeds
     known_time = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    hass.states.async_set(ENTITY_ID, int(known_time.timestamp()))
+    hass.states.async_set(ENTITY_ID, known_time.isoformat())
     await hass.async_block_till_done()
 
     mock_now = datetime(2025, 1, 1, 0, 0, 10, tzinfo=timezone.utc)
@@ -264,8 +264,7 @@ async def test_healthz_healthy(hass: HomeAssistant, hass_client) -> None:
 
     # Set entity state to a known timestamp
     known_time = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    known_timestamp = int(known_time.timestamp())
-    hass.states.async_set(ENTITY_ID, known_timestamp)
+    hass.states.async_set(ENTITY_ID, known_time.isoformat())
     await hass.async_block_till_done()
 
     # Mock utcnow to 30s later — within the 60s threshold
@@ -289,8 +288,8 @@ async def test_healthz_unhealthy(hass: HomeAssistant, hass_client) -> None:
     client = await hass_client()
 
     # Set entity state to a very old timestamp (2025-01-01 00:00:00 UTC)
-    old_timestamp = int(datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc).timestamp())
-    hass.states.async_set(ENTITY_ID, old_timestamp)
+    old_time = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    hass.states.async_set(ENTITY_ID, old_time.isoformat())
     await hass.async_block_till_done()
 
     # Mock utcnow to be 2 minutes later — well beyond the 60s threshold
@@ -351,13 +350,13 @@ async def test_healthz_no_state(hass: HomeAssistant, hass_client) -> None:
 
 
 async def test_healthz_invalid_state_value(hass: HomeAssistant, hass_client) -> None:
-    """Test returns unhealthy (503) when state is non-numeric."""
+    """Test returns unhealthy (503) when state is not a valid datetime."""
     await _create_and_setup_entry(hass)
     await hass.async_block_till_done()
 
     client = await hass_client()
 
-    # Set entity state to a non-numeric value
+    # Set entity state to a value that is not a valid datetime
     hass.states.async_set(ENTITY_ID, "not_a_number")
     await hass.async_block_till_done()
 
@@ -365,6 +364,29 @@ async def test_healthz_invalid_state_value(hass: HomeAssistant, hass_client) -> 
     assert resp.status == 503
     data = await resp.json()
     assert data["healthy"] is False
+
+
+async def test_healthz_naive_datetime_state(hass: HomeAssistant, hass_client) -> None:
+    """Test handles naive datetime (no timezone) by assuming UTC."""
+    await _create_and_setup_entry(hass, threshold=60)
+    await hass.async_block_till_done()
+
+    client = await hass_client()
+
+    # Set entity state to a valid ISO datetime without timezone info
+    hass.states.async_set(ENTITY_ID, "2025-01-01T00:00:00")
+    await hass.async_block_till_done()
+
+    # Mock utcnow to 10s later — within the 60s threshold
+    mock_now = datetime(2025, 1, 1, 0, 0, 10, tzinfo=timezone.utc)
+    with patch(
+        "custom_components.ha_health_check.dt_util.utcnow",
+        return_value=mock_now,
+    ):
+        resp = await client.get("/healthz")
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["healthy"] is True
 
 
 async def test_healthz_recorder_fallback(hass: HomeAssistant, hass_client) -> None:
@@ -387,8 +409,7 @@ async def test_healthz_recorder_fallback(hass: HomeAssistant, hass_client) -> No
 
     # Set a known valid timestamp so the health check considers it healthy
     known_time = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    known_timestamp = int(known_time.timestamp())
-    hass.states.async_set(ENTITY_ID, known_timestamp)
+    hass.states.async_set(ENTITY_ID, known_time.isoformat())
     await hass.async_block_till_done()
 
     # Mock utcnow to 10s later — within the 60s default threshold

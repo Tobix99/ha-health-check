@@ -193,14 +193,18 @@ class HealthCheckView(HomeAssistantView):
             )
             last_seen_state = hass.states.get(entity_id)
 
-        now = dt_util.utcnow().timestamp()
+        now = dt_util.utcnow()
 
         if last_seen_state is not None:
-            try:
-                last_keepalive_seconds_ago = int(now - float(last_seen_state.state))
-            except (ValueError, TypeError):
+            last_seen_dt = dt_util.parse_datetime(last_seen_state.state)
+            if last_seen_dt is None:
                 LOGGER.error("Invalid last_seen state value: %s", last_seen_state.state)
                 return self.json({"healthy": False}, status_code=503)
+
+            if last_seen_dt.tzinfo is None:
+                last_seen_dt = last_seen_dt.replace(tzinfo=dt_util.UTC)
+
+            last_keepalive_seconds_ago = int((now - last_seen_dt).total_seconds())
 
             if last_keepalive_seconds_ago < threshold:
                 LOGGER.debug(
