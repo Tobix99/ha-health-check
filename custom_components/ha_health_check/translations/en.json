@@ -1,0 +1,46 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "HA Health Check",
+        "description": "Configure the health check endpoint for Kubernetes probes.",
+        "data": {
+          "auth_required": "Require authentication",
+          "threshold": "Unhealthy threshold (seconds)",
+          "keepalive_interval": "Keepalive interval (seconds)"
+        },
+        "data_description": {
+          "auth_required": "If enabled, the /healthz endpoint requires a Home Assistant long-lived access token.",
+          "threshold": "Number of seconds without a keepalive before reporting unhealthy. Minimum: 10.",
+          "keepalive_interval": "How often to fire the internal keepalive event (seconds). Minimum: 5."
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "HA Health Check is already configured."
+    },
+    "error": {
+      "threshold_too_low": "Threshold must be greater than keepalive interval to avoid false unhealthy reports."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "HA Health Check Options",
+        "data": {
+          "auth_required": "Require authentication",
+          "threshold": "Unhealthy threshold (seconds)",
+          "keepalive_interval": "Keepalive interval (seconds)"
+        },
+        "data_description": {
+          "auth_required": "If enabled, the /healthz endpoint requires a Home Assistant long-lived access token.",
+          "threshold": "Number of seconds without a keepalive before reporting unhealthy. Minimum: 10.",
+          "keepalive_interval": "How often to fire the internal keepalive event (seconds). Minimum: 5."
+        }
+      }
+    },
+    "error": {
+      "threshold_too_low": "Threshold must be greater than keepalive interval to avoid false unhealthy reports."
+    }
+  }
+}
