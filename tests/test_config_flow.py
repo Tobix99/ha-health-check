@@ -60,7 +60,7 @@ async def test_user_flow_with_defaults(hass: HomeAssistant) -> None:
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["title"] == "HA Health Check"
     assert result["data"] == {
-        CONF_AUTH_REQUIRED: True,
+        CONF_AUTH_REQUIRED: False,
         CONF_THRESHOLD: 60,
         CONF_KEEPALIVE_INTERVAL: 10,
     }
