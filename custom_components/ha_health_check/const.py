@@ -19,6 +19,6 @@ CONF_AUTH_REQUIRED: Final = "auth_required"
 CONF_THRESHOLD: Final = "threshold"
 CONF_KEEPALIVE_INTERVAL: Final = "keepalive_interval"
 
-DEFAULT_AUTH_REQUIRED: Final = True
+DEFAULT_AUTH_REQUIRED: Final = False
 DEFAULT_THRESHOLD: Final = 60
 DEFAULT_KEEPALIVE_INTERVAL: Final = 10
