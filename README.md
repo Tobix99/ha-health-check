@@ -50,7 +50,7 @@ Home Assistant is a complex piece of software with many components and integrati
 2. Click **Add Integration**
 3. Search for "HA Health Check"
 4. Configure the options:
-   - **Require authentication**: Whether the `/healthz` endpoint requires a long-lived access token (default: `true`)
+   - **Require authentication**: Whether the `/healthz` endpoint requires a long-lived access token (default: `false`)
    - **Unhealthy threshold**: Seconds without a keepalive before reporting unhealthy (default: `60`)
    - **Keepalive interval**: How often the internal keepalive event fires in seconds (default: `10`)
 
