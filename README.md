@@ -27,6 +27,23 @@ Home Assistant is a complex piece of software with many components and integrati
 
 **It is possible that Home Assistant cannot perform some actions and still be reported as healthy.**
 
+### Backup awareness
+
+The health check automatically detects when Home Assistant is performing a backup (creating, receiving, or restoring). During backup operations, the `/healthz` endpoint always returns healthy, regardless of keepalive staleness. This prevents Kubernetes from killing the pod mid-backup.
+
+Backups are CPU-intensive and can block the event loop, which prevents the keepalive timer from firing. Without backup awareness, the health check would report unhealthy and Kubernetes would terminate the pod — interrupting the backup and causing unnecessary downtime.
+
+The health check logs at INFO level when it starts suppressing failures due to a backup, and again when normal operation resumes. During backup, the response includes an extra field:
+
+```
+< HTTP/1.1 200 OK
+< Content-Type: application/json
+
+{"healthy": true, "backup_in_progress": true}
+```
+
+This behavior requires no configuration and works automatically when the Home Assistant [backup integration](https://www.home-assistant.io/integrations/backup/) is loaded (which it is by default in all installations).
+
 ## Installation
 
 ### HACS (Recommended)
@@ -135,6 +152,8 @@ The `/healthz` endpoint will automatically fall back to reading from `hass.state
 
 ### Endpoint returns 503
 The endpoint returns 503 when the service is unavailable. This can mean the integration is not fully initialized (wait for Home Assistant to finish starting up) or the keepalive threshold has been exceeded.
+
+> **Note:** During backup operations, the endpoint returns 200 regardless of keepalive state. See [Backup awareness](#backup-awareness) above.
 
 ### Endpoint returns 401
 Authentication is enabled (default). Either:

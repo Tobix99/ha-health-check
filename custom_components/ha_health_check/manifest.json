@@ -1,7 +1,7 @@
 {
   "domain": "ha_health_check",
   "name": "HA Health Check",
-  "after_dependencies": ["recorder"],
+  "after_dependencies": ["backup", "recorder"],
   "codeowners": ["@Tobix99"],
   "config_flow": true,
   "dependencies": ["http"],

@@ -11,6 +11,7 @@ from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ha_health_check.const import (
+    BACKUP_DOMAIN,
     CONF_AUTH_REQUIRED,
     CONF_KEEPALIVE_INTERVAL,
     CONF_THRESHOLD,
@@ -23,6 +24,14 @@ from custom_components.ha_health_check.const import (
 # Expected entity_id: with has_entity_name=True, HA derives it from the
 # device name ("HA Health Check") and entity name ("Last Seen").
 ENTITY_ID = "sensor.ha_health_check_last_seen"
+
+
+class MockBackupManager:
+    """Mock backup manager for testing backup-aware health check."""
+
+    def __init__(self, state: str = "idle") -> None:
+        """Initialize with a given state."""
+        self.state = state
 
 
 # ---------------------------------------------------------------------------
@@ -303,6 +312,148 @@ async def test_healthz_unhealthy(hass: HomeAssistant, hass_client) -> None:
         assert resp.status == 503
         data = await resp.json()
         assert data["healthy"] is False
+
+
+# ---------------------------------------------------------------------------
+# Backup-aware health check tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "backup_state",
+    ["create_backup", "receive_backup", "restore_backup"],
+)
+async def test_healthz_healthy_during_backup(
+    hass: HomeAssistant, hass_client, backup_state: str
+) -> None:
+    """Test returns healthy (200) during backup even when keepalive is stale."""
+    await _create_and_setup_entry(hass, threshold=60, keepalive_interval=10)
+    await hass.async_block_till_done()
+
+    client = await hass_client()
+
+    # Set entity state to a very old timestamp — well beyond threshold
+    old_time = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    hass.states.async_set(ENTITY_ID, old_time.isoformat())
+    await hass.async_block_till_done()
+
+    # Simulate backup in progress
+    hass.data[BACKUP_DOMAIN] = MockBackupManager(state=backup_state)
+
+    mock_now = datetime(2025, 1, 1, 0, 2, 0, tzinfo=timezone.utc)
+    with patch(
+        "custom_components.ha_health_check.dt_util.utcnow",
+        return_value=mock_now,
+    ):
+        resp = await client.get("/healthz")
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["healthy"] is True
+        assert data["backup_in_progress"] is True
+
+
+async def test_healthz_no_backup_integration(hass: HomeAssistant, hass_client) -> None:
+    """Test returns unhealthy normally when backup integration is not loaded."""
+    await _create_and_setup_entry(hass, threshold=60, keepalive_interval=10)
+    await hass.async_block_till_done()
+
+    client = await hass_client()
+
+    # Set entity state to a very old timestamp — well beyond threshold
+    old_time = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    hass.states.async_set(ENTITY_ID, old_time.isoformat())
+    await hass.async_block_till_done()
+
+    # Ensure no backup data exists
+    hass.data.pop(BACKUP_DOMAIN, None)
+
+    mock_now = datetime(2025, 1, 1, 0, 2, 0, tzinfo=timezone.utc)
+    with patch(
+        "custom_components.ha_health_check.dt_util.utcnow",
+        return_value=mock_now,
+    ):
+        resp = await client.get("/healthz")
+        assert resp.status == 503
+        data = await resp.json()
+        assert data["healthy"] is False
+
+
+async def test_healthz_unhealthy_when_backup_idle(
+    hass: HomeAssistant, hass_client
+) -> None:
+    """Test returns unhealthy when backup manager exists but is idle."""
+    await _create_and_setup_entry(hass, threshold=60, keepalive_interval=10)
+    await hass.async_block_till_done()
+
+    client = await hass_client()
+
+    # Set entity state to a very old timestamp — well beyond threshold
+    old_time = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    hass.states.async_set(ENTITY_ID, old_time.isoformat())
+    await hass.async_block_till_done()
+
+    # Simulate backup manager in idle state
+    hass.data[BACKUP_DOMAIN] = MockBackupManager(state="idle")
+
+    mock_now = datetime(2025, 1, 1, 0, 2, 0, tzinfo=timezone.utc)
+    with patch(
+        "custom_components.ha_health_check.dt_util.utcnow",
+        return_value=mock_now,
+    ):
+        resp = await client.get("/healthz")
+        assert resp.status == 503
+        data = await resp.json()
+        assert data["healthy"] is False
+
+
+async def test_healthz_backup_override_logging(
+    hass: HomeAssistant, hass_client, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test logs transition into and out of backup override mode."""
+    await _create_and_setup_entry(hass, threshold=60, keepalive_interval=10)
+    await hass.async_block_till_done()
+
+    client = await hass_client()
+
+    # Set entity state to a very old timestamp — well beyond threshold
+    old_time = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    hass.states.async_set(ENTITY_ID, old_time.isoformat())
+    await hass.async_block_till_done()
+
+    mock_now = datetime(2025, 1, 1, 0, 2, 0, tzinfo=timezone.utc)
+
+    # Start backup — first probe should log transition
+    hass.data[BACKUP_DOMAIN] = MockBackupManager(state="create_backup")
+
+    with patch(
+        "custom_components.ha_health_check.dt_util.utcnow",
+        return_value=mock_now,
+    ):
+        caplog.clear()
+        resp = await client.get("/healthz")
+        assert resp.status == 200
+        assert "Backup in progress" in caplog.text
+
+        # Second probe during backup — should NOT log again
+        caplog.clear()
+        resp = await client.get("/healthz")
+        assert resp.status == 200
+        assert "Backup in progress" not in caplog.text
+
+    # Backup finishes, keepalive recovers — should log end of override
+    hass.data[BACKUP_DOMAIN] = MockBackupManager(state="idle")
+    fresh_time = datetime(2025, 1, 1, 0, 1, 55, tzinfo=timezone.utc)
+    hass.states.async_set(ENTITY_ID, fresh_time.isoformat())
+    await hass.async_block_till_done()
+
+    with patch(
+        "custom_components.ha_health_check.dt_util.utcnow",
+        return_value=mock_now,
+    ):
+        caplog.clear()
+        resp = await client.get("/healthz")
+        assert resp.status == 200
+        assert "resumed normal operation" in caplog.text
 
 
 @pytest.mark.parametrize(
