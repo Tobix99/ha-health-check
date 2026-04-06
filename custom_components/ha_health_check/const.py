@@ -8,6 +8,7 @@ from typing import Final
 from homeassistant.const import Platform
 
 DOMAIN: Final = "ha_health_check"
+BACKUP_DOMAIN: Final = "backup"
 
 LOGGER: Final = logging.getLogger(f"custom_components.{DOMAIN}")
 

@@ -20,6 +20,7 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    BACKUP_DOMAIN,
     CONF_AUTH_REQUIRED,
     CONF_KEEPALIVE_INTERVAL,
     CONF_THRESHOLD,
@@ -88,6 +89,7 @@ async def _async_setup_health_check(
         CONF_AUTH_REQUIRED: auth_required,
         CONF_THRESHOLD: threshold,
         CONF_KEEPALIVE_INTERVAL: keepalive_interval,
+        "backup_override_active": False,
     }
 
     # Register HTTP endpoint
@@ -133,6 +135,21 @@ class HealthCheckView(HomeAssistantView):
         """Initialize the health check view."""
         self.requires_auth = auth_required
 
+    @staticmethod
+    def _is_backup_in_progress(hass: HomeAssistant) -> bool:
+        """Check if a backup operation is currently running.
+
+        Reads the backup manager state from hass.data without importing
+        the backup component, avoiding a hard dependency.
+        """
+        try:
+            backup_manager = hass.data.get(BACKUP_DOMAIN)
+            if backup_manager is not None and hasattr(backup_manager, "state"):
+                return backup_manager.state != "idle"
+        except Exception:  # noqa: BLE001
+            LOGGER.debug("Could not check backup state", exc_info=True)
+        return False
+
     async def get(self, request: Any) -> Any:
         """Handle GET request to /healthz."""
         hass: HomeAssistant = request.app["hass"]
@@ -144,6 +161,20 @@ class HealthCheckView(HomeAssistantView):
                 hass.state,
             )
             return self.json({"healthy": True})
+
+        # During backup operations, report as healthy to prevent
+        # Kubernetes from killing the pod mid-backup.
+        if self._is_backup_in_progress(hass):
+            domain_data = hass.data.get(DOMAIN)
+            if domain_data is not None:
+                was_active = domain_data.get("backup_override_active", False)
+                if not was_active:
+                    LOGGER.info(
+                        "Backup in progress, suppressing health check "
+                        "failures until backup completes"
+                    )
+                    domain_data["backup_override_active"] = True
+            return self.json({"healthy": True, "backup_in_progress": True})
 
         domain_data = hass.data.get(DOMAIN)
         if domain_data is None:
@@ -207,6 +238,11 @@ class HealthCheckView(HomeAssistantView):
             last_keepalive_seconds_ago = int((now - last_seen_dt).total_seconds())
 
             if last_keepalive_seconds_ago < threshold:
+                if domain_data.get("backup_override_active", False):
+                    LOGGER.info(
+                        "Backup completed, health check resumed normal operation"
+                    )
+                    domain_data["backup_override_active"] = False
                 LOGGER.debug(
                     "Home Assistant is healthy, last keepalive %d seconds ago",
                     last_keepalive_seconds_ago,
@@ -221,5 +257,11 @@ class HealthCheckView(HomeAssistantView):
             )
         else:
             LOGGER.error("Home Assistant is unhealthy, no keepalive state found")
+
+        # If we reach here, backup is not in progress (handled above) and
+        # the system is genuinely unhealthy.  Reset the override flag so the
+        # next backup correctly logs the transition start.
+        if domain_data.get("backup_override_active", False):
+            domain_data["backup_override_active"] = False
 
         return self.json({"healthy": False}, status_code=503)
