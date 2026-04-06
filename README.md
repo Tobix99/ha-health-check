@@ -31,7 +31,7 @@ Home Assistant is a complex piece of software with many components and integrati
 
 The health check automatically detects when Home Assistant is performing a backup (creating, receiving, or restoring). During backup operations, the `/healthz` endpoint always returns healthy, regardless of keepalive staleness. This prevents Kubernetes from killing the pod mid-backup.
 
-Backups are CPU-intensive and can block the event loop, which prevents the keepalive timer from firing. Without backup awareness, the health check would report unhealthy and Kubernetes would terminate the pod — interrupting the backup and causing unnecessary downtime.
+During a backup, the recorder integration locks the database for writes to ensure consistency. This prevents the keepalive timer from persisting state updates, causing stale sensor readings. Without backup awareness, the health check would report unhealthy and Kubernetes would terminate the pod — interrupting the backup and causing unnecessary downtime.
 
 The health check logs at INFO level when it starts suppressing failures due to a backup, and again when normal operation resumes. During backup, the response includes an extra field:
 

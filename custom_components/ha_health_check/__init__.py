@@ -164,6 +164,9 @@ class HealthCheckView(HomeAssistantView):
 
         # During backup operations, report as healthy to prevent
         # Kubernetes from killing the pod mid-backup.
+        # The recorder locks the database for writes during backup
+        # (for consistency), which blocks the keepalive timer from
+        # persisting state updates and causes stale sensor readings.
         if self._is_backup_in_progress(hass):
             domain_data = hass.data.get(DOMAIN)
             if domain_data is not None:
