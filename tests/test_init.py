@@ -591,9 +591,12 @@ async def test_healthz_domain_data_missing(hass: HomeAssistant, hass_client) -> 
     client = await hass_client()
 
     # Simulate domain data being removed (e.g. integration unloading)
-    hass.data.pop(DOMAIN)
-
-    resp = await client.get("/healthz")
-    assert resp.status == 503
-    data = await resp.json()
-    assert data["healthy"] is False
+    domain_data = hass.data.pop(DOMAIN)
+    try:
+        resp = await client.get("/healthz")
+        assert resp.status == 503
+        data = await resp.json()
+        assert data["healthy"] is False
+    finally:
+        # Restore so teardown can cancel the keepalive timer
+        hass.data[DOMAIN] = domain_data

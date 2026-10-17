@@ -1,0 +1,44 @@
+name: Dependabot auto-merge
+
+# Merges Dependabot PRs once all checks succeeded on their latest commit
+on:
+  workflow_run:
+    workflows: [Tests, Validate]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  merge:
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Merge pull request
+        run: |
+          set -e
+          PR=$(gh pr view "${HEAD_BRANCH}" --json author,headRefOid,statusCheckRollup)
+          if [ "$(jq -r '.author.login' <<< "${PR}")" != "app/dependabot" ]; then
+            echo "PR is not from Dependabot; skipping"
+            exit 0
+          fi
+          if [ "$(jq -r '.headRefOid' <<< "${PR}")" != "${HEAD_SHA}" ]; then
+            echo "PR has a newer commit; skipping"
+            exit 0
+          fi
+          # Wait for the other workflow: every check must have finished successfully
+          PENDING=$(jq '[.statusCheckRollup[] | select((.conclusion // .state) as $c | ($c != "SUCCESS" and $c != "SKIPPED" and $c != "NEUTRAL"))] | length' <<< "${PR}")
+          if [ "${PENDING}" != "0" ]; then
+            echo "${PENDING} check(s) not successful yet; skipping"
+            exit 0
+          fi
+          gh pr merge "${HEAD_BRANCH}" --squash --delete-branch --match-head-commit "${HEAD_SHA}"
